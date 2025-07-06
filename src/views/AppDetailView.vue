@@ -7,12 +7,17 @@ import { useAuthStore } from '@/stores/auth'
 // Types
 interface App {
   _id: string
+  id?: string
   name: string
   description: string
   logo?: string
   banner?: string
   isPublic: boolean
   isActive: boolean
+  type?: {
+    name: string
+  }
+  qr_url?: string
   location?: {
     address?: string
     city?: string
@@ -64,10 +69,23 @@ interface App {
     addedAt: string
   }>
   data?: {
-    [key: string]: any
+    menu?: MenuCategory[]
+    members?: Array<{
+      id: string
+      name: string
+      email: string
+      role: string
+    }>
+    owner?: {
+      id: string
+      name: string
+      email: string
+    }
+    [key: string]: unknown
   }
   createdAt: string
   updatedAt: string
+  created_at?: string
 }
 
 interface MenuCategory {
@@ -117,20 +135,6 @@ const menuStats = computed(() => {
   return { categories, items }
 })
 
-const userRole = computed(() => {
-  // Geçici olarak herkesi owner olarak kabul et
-  return 'owner'
-  
-  /*
-  if (!authStore.user || !app.value) return null
-  
-  if (authStore.user.id === app.value.data?.owner?.id) return 'owner'
-  
-  const member = app.value.data?.members?.find((m: any) => m.id === authStore.user?.id)
-  return member?.role || null
-  */
-})
-
 const canEdit = computed(() => true) // Geçici olarak herkese düzenleme izni ver
 const canDelete = computed(() => true) // Geçici olarak herkese silme izni ver
 
@@ -168,7 +172,7 @@ const getFieldDescription = (field: string): string => {
   return descriptions[field] || 'Bu alanın açıklaması mevcut değil'
 }
 
-const editField = (field: string, value: any) => {
+const editField = (field: string, value: unknown) => {
   editingField.value = field
   editingFieldValue.value = JSON.stringify(value, null, 2)
   fieldError.value = null
@@ -180,22 +184,22 @@ const cancelFieldEdit = () => {
   fieldError.value = null
 }
 
-const copyToClipboard = async (text: string) => {
+const copyToClipboard = async (text: string | number) => {
   try {
-    await navigator.clipboard.writeText(text)
+    await navigator.clipboard.writeText(String(text))
     alert('Panoya kopyalandı!')
   } catch (err) {
     console.error('Kopyalama hatası:', err)
   }
 }
 
-const formatDate = (dateString?: string): string => {
+const formatDate = (dateString?: string | number): string => {
   if (!dateString) return 'Bilinmiyor'
-  return new Date(dateString).toLocaleDateString('tr-TR')
+  return new Date(String(dateString)).toLocaleDateString('tr-TR')
 }
 
 const removeMember = async (index: number) => {
-  if (!app.value?.data?.members) return
+  if (!app.value?.data?.members || !Array.isArray(app.value.data.members)) return
   
   if (confirm('Bu üyeyi çıkarmak istediğinizden emin misiniz?')) {
     try {
@@ -311,13 +315,13 @@ const loadApp = async () => {
 const saveField = async (field: string) => {
   if (!app.value || !canEdit.value) return
   
-  let parsedValue: any = editingFieldValue.value
+  let parsedValue: unknown = editingFieldValue.value
   
   // JSON string'i parse et
   try {
     parsedValue = JSON.parse(editingFieldValue.value)
     fieldError.value = null
-  } catch (err) {
+  } catch {
     fieldError.value = 'Geçersiz JSON formatı'
     return
   }
@@ -363,17 +367,19 @@ const addCategory = async () => {
   if (!app.value.data) app.value.data = {}
   if (!app.value.data.menu) app.value.data.menu = []
   
-  app.value.data.menu.push({
-    category: newCategory.value.category.trim(),
-    items: []
-  })
+  if (Array.isArray(app.value.data.menu)) {
+    app.value.data.menu.push({
+      category: newCategory.value.category.trim(),
+      items: []
+    })
+  }
   
   newCategory.value.category = ''
   await saveMenuData()
 }
 
 const deleteCategory = async (categoryIndex: number) => {
-  if (!app.value?.data?.menu || !canEdit.value) return
+  if (!app.value?.data?.menu || !Array.isArray(app.value.data.menu) || !canEdit.value) return
   if (!confirm('Bu kategoriyi ve tüm ürünlerini silmek istediğinizden emin misiniz?')) return
   
   app.value.data.menu.splice(categoryIndex, 1)
@@ -381,16 +387,22 @@ const deleteCategory = async (categoryIndex: number) => {
 }
 
 const updateCategoryName = async (categoryIndex: number, newName: string) => {
-  if (!app.value?.data?.menu || !canEdit.value) return
+  if (!app.value?.data?.menu || !Array.isArray(app.value.data.menu) || !canEdit.value) return
   
-  app.value.data.menu[categoryIndex].category = newName
+  const menu = app.value.data.menu
+  if (menu[categoryIndex]) {
+    menu[categoryIndex].category = newName
+  }
   editingCategory.value = null
   await saveMenuData()
 }
 
 const addItem = async (categoryIndex: number) => {
-  if (!app.value?.data?.menu || !canEdit.value) return
+  if (!app.value?.data?.menu || !Array.isArray(app.value.data.menu) || !canEdit.value) return
   if (!newItem.value.name.trim() || !newItem.value.price.trim()) return
+  
+  const menu = app.value.data.menu
+  if (!menu[categoryIndex]) return
   
   const item: MenuItem = {
     name: newItem.value.name.trim(),
@@ -401,30 +413,36 @@ const addItem = async (categoryIndex: number) => {
     item.description = newItem.value.description.trim()
   }
   
-  app.value.data.menu[categoryIndex].items.push(item)
+  menu[categoryIndex].items.push(item)
   newItem.value = { name: '', price: '', description: '' }
   await saveMenuData()
 }
 
 const updateItem = async (categoryIndex: number, itemIndex: number, updatedItem: MenuItem) => {
-  if (!app.value?.data?.menu || !canEdit.value) return
+  if (!app.value?.data?.menu || !Array.isArray(app.value.data.menu) || !canEdit.value) return
   
-  app.value.data.menu[categoryIndex].items[itemIndex] = updatedItem
+  const menu = app.value.data.menu
+  if (!menu[categoryIndex] || !menu[categoryIndex].items[itemIndex]) return
+  
+  menu[categoryIndex].items[itemIndex] = updatedItem
   editingItem.value = null
   await saveMenuData()
 }
 
 const deleteItem = async (categoryIndex: number, itemIndex: number) => {
-  if (!app.value?.data?.menu || !canEdit.value) return
+  if (!app.value?.data?.menu || !Array.isArray(app.value.data.menu) || !canEdit.value) return
   if (!confirm('Bu ürünü silmek istediğinizden emin misiniz?')) return
   
-  app.value.data.menu[categoryIndex].items.splice(itemIndex, 1)
+  const menu = app.value.data.menu
+  if (!menu[categoryIndex]) return
+  
+  menu[categoryIndex].items.splice(itemIndex, 1)
   await saveMenuData()
 }
 
 // Sıralama fonksiyonları
 const moveCategoryUp = async (categoryIndex: number) => {
-  if (!app.value?.data?.menu || !canEdit.value || categoryIndex === 0) return
+  if (!app.value?.data?.menu || !Array.isArray(app.value.data.menu) || !canEdit.value || categoryIndex === 0) return
   
   const menu = app.value.data.menu
   ;[menu[categoryIndex - 1], menu[categoryIndex]] = [menu[categoryIndex], menu[categoryIndex - 1]]
@@ -433,7 +451,7 @@ const moveCategoryUp = async (categoryIndex: number) => {
 }
 
 const moveCategoryDown = async (categoryIndex: number) => {
-  if (!app.value?.data?.menu || !canEdit.value) return
+  if (!app.value?.data?.menu || !Array.isArray(app.value.data.menu) || !canEdit.value) return
   
   const menu = app.value.data.menu
   if (categoryIndex === menu.length - 1) return
@@ -444,18 +462,24 @@ const moveCategoryDown = async (categoryIndex: number) => {
 }
 
 const moveItemUp = async (categoryIndex: number, itemIndex: number) => {
-  if (!app.value?.data?.menu || !canEdit.value || itemIndex === 0) return
+  if (!app.value?.data?.menu || !Array.isArray(app.value.data.menu) || !canEdit.value || itemIndex === 0) return
   
-  const items = app.value.data.menu[categoryIndex].items
+  const menu = app.value.data.menu
+  if (!menu[categoryIndex]) return
+  
+  const items = menu[categoryIndex].items
   ;[items[itemIndex - 1], items[itemIndex]] = [items[itemIndex], items[itemIndex - 1]]
   
   await saveMenuData()
 }
 
 const moveItemDown = async (categoryIndex: number, itemIndex: number) => {
-  if (!app.value?.data?.menu || !canEdit.value) return
+  if (!app.value?.data?.menu || !Array.isArray(app.value.data.menu) || !canEdit.value) return
   
-  const items = app.value.data.menu[categoryIndex].items
+  const menu = app.value.data.menu
+  if (!menu[categoryIndex]) return
+  
+  const items = menu[categoryIndex].items
   if (itemIndex === items.length - 1) return
   
   ;[items[itemIndex], items[itemIndex + 1]] = [items[itemIndex + 1], items[itemIndex]]
@@ -1059,14 +1083,14 @@ onMounted(() => {
           <div class="space-y-6">
             <div v-for="(value, field) in filteredAppData" :key="field" class="border border-gray-200 rounded-lg overflow-hidden">
               <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
-                <h4 class="font-semibold text-gray-900 capitalize">{{ formatFieldName(field) }}</h4>
-                <p class="text-sm text-gray-600">{{ getFieldDescription(field) }}</p>
+                <h4 class="font-semibold text-gray-900 capitalize">{{ formatFieldName(String(field)) }}</h4>
+                <p class="text-sm text-gray-600">{{ getFieldDescription(String(field)) }}</p>
               </div>
               <div class="p-4">
                 <div v-if="editingField === field" class="space-y-4">
                   <textarea
                     v-model="editingFieldValue"
-                    :placeholder="`${formatFieldName(field)} verilerini JSON formatında düzenleyin...`"
+                    :placeholder="`${formatFieldName(String(field))} verilerini JSON formatında düzenleyin...`"
                     rows="10"
                     class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
                   ></textarea>
@@ -1075,7 +1099,7 @@ onMounted(() => {
                   </div>
                   <div class="flex gap-3">
                     <button 
-                      @click="saveField(field)" 
+                      @click="saveField(String(field))" 
                       class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
                     >
                       Kaydet
@@ -1094,7 +1118,7 @@ onMounted(() => {
                   </div>
                   <div v-if="canEdit" class="mt-3">
                     <button 
-                      @click="editField(field, value)" 
+                      @click="editField(String(field), value)" 
                       class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
                     >
                       Düzenle

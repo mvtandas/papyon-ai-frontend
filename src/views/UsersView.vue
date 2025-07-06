@@ -347,7 +347,7 @@ onMounted(() => {
                   </button>
                   
                   <button 
-                    v-if="canManageUsers && user._id !== authStore.user?._id"
+                    v-if="canManageUsers && user._id !== authStore.user?.id"
                     @click="handleUserAction(user, 'delete')"
                     class="action-btn delete-btn"
                     title="Sil"

@@ -10,19 +10,74 @@ import {
   TrashIcon,
 } from "@heroicons/vue/24/outline";
 
+// Types
+interface App {
+  _id: string
+  name: string
+  description: string
+  logo?: string
+  banner?: string
+  isPublic: boolean
+  isActive: boolean
+  role: 'owner' | 'admin' | 'editor' | 'viewer'
+  appType?: string | {
+    _id: string
+    id?: string
+  }
+  appTypeName?: string
+  location?: {
+    address?: string
+    city?: string
+    country?: string
+  }
+  contact?: {
+    phone?: string
+    email?: string
+    website?: string
+  }
+  data?: Record<string, unknown>
+}
+
+interface AppType {
+  _id: string
+  name: string
+  displayName: string
+  description: string
+  features?: Array<{
+    name: string
+    description: string
+    isRequired: boolean
+  }>
+}
+
+interface Member {
+  userId: string
+  userName: string
+  userEmail: string
+  role: 'owner' | 'admin' | 'editor' | 'viewer'
+}
+
+interface DataField {
+  key: string;
+  label: string;
+  type: string;
+  value: string;
+  isRequired: boolean;
+}
+
 const authStore = useAuthStore();
 const router = useRouter();
 
 // State
-const apps = ref([]);
-const appTypes = ref([]);
+const apps = ref<App[]>([]);
+const appTypes = ref<AppType[]>([]);
 const loading = ref(false);
 const error = ref("");
 const showCreateModal = ref(false);
 const showEditModal = ref(false);
 const showDeleteModal = ref(false);
 const showMembersModal = ref(false);
-const selectedApp = ref(null);
+const selectedApp = ref<App | null>(null);
 const currentPage = ref(1);
 const totalPages = ref(1);
 const searchQuery = ref("");
@@ -30,16 +85,16 @@ const selectedAppType = ref("");
 const viewMode = ref("my"); // 'my' veya 'public'
 
 // Members modal state
-const members = ref([]);
+const members = ref<Member[]>([]);
 const membersLoading = ref(false);
 const showAddMemberModal = ref(false);
 const newMemberData = ref({
   userId: "",
-  role: "viewer",
+  role: "viewer" as const,
 });
 
 // Data form state
-const dataFields = ref([]);
+const dataFields = ref<DataField[]>([]);
 const showDataEditor = ref(false);
 
 // Form data
@@ -48,7 +103,7 @@ const formData = ref({
   description: "",
   appType: "",
   isPublic: false,
-  data: {},
+  data: {} as Record<string, unknown>,
   logo: "",
   banner: "",
   location: {
@@ -68,32 +123,15 @@ const canCreateApps = computed(() => {
   return authStore.isAuthenticated;
 });
 
-const canEditApp = computed(() => (app) => {
-  if (!app) return false;
-  // SUPER_ADMIN her şeyi yapabilir
-  if (authStore.user?.roles?.some((role) => role.name === "SUPER_ADMIN"))
-    return true;
-
-  return app.role === "owner" || app.role === "admin" || app.role === "editor";
-});
-
-const canDeleteApp = computed(() => (app) => {
-  if (!app) return false;
-  // SUPER_ADMIN her şeyi yapabilir
-  if (authStore.user?.roles?.some((role) => role.name === "SUPER_ADMIN"))
-    return true;
-  return app.role === "owner";
-});
-
 const getAppDataPreview = computed(() => {
-  return (app) => {
+  return (app: App) => {
     if (!app.data || Object.keys(app.data).length === 0) {
       return "Veri yok";
     }
 
     const dataKeys = Object.keys(app.data);
     const previewItems = dataKeys.slice(0, 2).map((key) => {
-      const value = app.data[key];
+      const value = app.data![key];
       return `${key}: ${typeof value === "string" ? value.substring(0, 20) : JSON.stringify(value).substring(0, 20)}${typeof value === "string" && value.length > 20 ? "..." : ""}`;
     });
 
@@ -142,35 +180,28 @@ const loadAppTypes = async () => {
   }
 };
 
-const handleAppTypeChange = () => {
-  if (formData.value.appType) {
-    const selectedType = appTypes.value.find(
-      (type) => type._id === formData.value.appType
-    );
-
-    if (selectedType && selectedType.features) {
-      // App tipine göre data alanlarını oluştur
-      dataFields.value = selectedType.features.map((feature) => ({
+const handleAppTypeChange = (event: Event) => {
+  const target = event.target as HTMLSelectElement;
+  if (target) {
+    formData.value.appType = target.value;
+    const selectedType = appTypes.value.find(type => type._id === target.value);
+    if (selectedType) {
+      dataFields.value = selectedType.features?.map(feature => ({
         key: feature.name,
         label: feature.description,
         type: "text",
-        value: formData.value.data[feature.name] || "",
-        isRequired: feature.isRequired,
-      }));
-    } else {
-      dataFields.value = [];
+        value: '',
+        isRequired: feature.isRequired
+      })) || [];
     }
-  } else {
-    dataFields.value = [];
   }
 };
 
-const handleDataFieldChange = (key, value) => {
-  formData.value.data[key] = value;
-};
-
-const openDataEditor = () => {
-  showDataEditor.value = true;
+const handleDataFieldChange = (key: string, event: Event) => {
+  const target = event.target as HTMLInputElement;
+  if (target) {
+    formData.value.data[key] = target.value;
+  }
 };
 
 const closeDataEditor = () => {
@@ -209,7 +240,7 @@ const handleCreate = () => {
   showCreateModal.value = true;
 };
 
-const handleEdit = (app) => {
+const handleEdit = (app: App) => {
   console.log('Editing app:', app);
   console.log('App type from app object:', app.appType);
   
@@ -218,18 +249,26 @@ const handleEdit = (app) => {
   // appType obje mi yoksa string mi kontrol et
   const appTypeId = typeof app.appType === 'object' && app.appType !== null 
     ? app.appType._id || app.appType.id 
-    : app.appType;
+    : app.appType || '';
   
   formData.value = {
     name: app.name,
     description: app.description,
-    appType: appTypeId,
+    appType: appTypeId || "",
     isPublic: app.isPublic,
     data: { ...app.data },
     logo: app.logo || "",
     banner: app.banner || "",
-    location: { ...app.location },
-    contact: { ...app.contact },
+    location: { 
+      address: app.location?.address || "", 
+      city: app.location?.city || "", 
+      country: app.location?.country || "" 
+    },
+    contact: { 
+      phone: app.contact?.phone || "", 
+      email: app.contact?.email || "", 
+      website: app.contact?.website || "" 
+    },
   };
 
   console.log('Form data appType:', formData.value.appType);
@@ -245,7 +284,7 @@ const handleEdit = (app) => {
         key: feature.name,
         label: feature.description,
         type: "text",
-        value: app.data[feature.name] || "",
+        value: (app.data?.[feature.name] as string) || "",
         isRequired: feature.isRequired,
       }));
     }
@@ -254,12 +293,12 @@ const handleEdit = (app) => {
   showEditModal.value = true;
 };
 
-const handleDelete = (app) => {
+const handleDelete = (app: App) => {
   selectedApp.value = app;
   showDeleteModal.value = true;
 };
 
-const handleMembers = (app) => {
+const handleMembers = (app: App) => {
   selectedApp.value = app;
   showMembersModal.value = true;
   loadMembers();
@@ -283,12 +322,14 @@ const loadMembers = async () => {
 const handleAddMember = () => {
   newMemberData.value = {
     userId: "",
-    role: "viewer",
+    role: "viewer" as const,
   };
   showAddMemberModal.value = true;
 };
 
 const submitAddMember = async () => {
+  if (!selectedApp.value) return;
+  
   try {
     await appAPI.addMember(selectedApp.value._id, newMemberData.value);
     showAddMemberModal.value = false;
@@ -299,8 +340,9 @@ const submitAddMember = async () => {
   }
 };
 
-const handleRemoveMember = async (userId) => {
+const handleRemoveMember = async (userId: string) => {
   if (!confirm("Bu üyeyi çıkarmak istediğinizden emin misiniz?")) return;
+  if (!selectedApp.value) return;
 
   try {
     await appAPI.removeMember(selectedApp.value._id, userId);
@@ -311,7 +353,14 @@ const handleRemoveMember = async (userId) => {
   }
 };
 
-const handleUpdateMemberRole = async (userId, newRole) => {
+const handleUpdateMemberRole = async (userId: string, event: Event) => {
+  if (!selectedApp.value) return;
+  
+  const target = event.target as HTMLSelectElement;
+  if (!target) return;
+  
+  const newRole = target.value as 'owner' | 'admin' | 'editor' | 'viewer';
+  
   try {
     await appAPI.updateMemberRole(selectedApp.value._id, userId, newRole);
     await loadMembers();
@@ -323,6 +372,7 @@ const handleUpdateMemberRole = async (userId, newRole) => {
 
 const handleLeaveApp = async () => {
   if (!confirm("Bu app'den ayrılmak istediğinizden emin misiniz?")) return;
+  if (!selectedApp.value) return;
 
   try {
     await appAPI.leaveApp(selectedApp.value._id);
@@ -370,6 +420,8 @@ const submitCreate = async () => {
 };
 
 const submitEdit = async () => {
+  if (!selectedApp.value) return;
+  
   try {
     await appAPI.updateApp(selectedApp.value._id, formData.value);
     showEditModal.value = false;
@@ -381,6 +433,8 @@ const submitEdit = async () => {
 };
 
 const submitDelete = async () => {
+  if (!selectedApp.value) return;
+  
   try {
     await appAPI.deleteApp(selectedApp.value._id);
     showDeleteModal.value = false;
@@ -396,18 +450,18 @@ const handleSearch = () => {
   loadApps();
 };
 
-const changePage = (page) => {
+const changePage = (page: number) => {
   currentPage.value = page;
   loadApps();
 };
 
-const switchViewMode = (mode) => {
+const switchViewMode = (mode: string) => {
   viewMode.value = mode;
   currentPage.value = 1;
   loadApps();
 };
 
-const handleViewDetails = (app) => {
+const handleViewDetails = (app: App) => {
   router.push(`/apps/${app._id}`);
 };
 
@@ -988,9 +1042,7 @@ onMounted(() => {
                     member.role !== 'owner'
                   "
                   :value="member.role"
-                  @change="
-                    handleUpdateMemberRole(member.userId, $event.target.value)
-                  "
+                  @change="handleUpdateMemberRole(member.userId, $event)"
                   class="role-select"
                 >
                   <option value="admin">Admin</option>
@@ -1141,7 +1193,7 @@ onMounted(() => {
                 :type="field.type"
                 :placeholder="field.label"
                 :required="field.isRequired"
-                @input="handleDataFieldChange(field.key, $event.target.value)"
+                @input="handleDataFieldChange(field.key, $event)"
               />
             </div>
           </div>

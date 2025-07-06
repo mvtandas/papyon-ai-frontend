@@ -8,16 +8,28 @@ import {
   ArrowPathIcon
 } from '@heroicons/vue/24/outline';
 
+// Types
+interface AppType {
+  id: string
+  name: string
+  displayName: string
+  description: string
+  features: string[]
+  icon: string
+  color: string
+  isActive: boolean
+}
+
 const authStore = useAuthStore()
 
 // State
-const appTypes = ref([])
+const appTypes = ref<AppType[]>([])
 const loading = ref(false)
 const error = ref('')
 const showCreateModal = ref(false)
 const showEditModal = ref(false)
 const showDeleteModal = ref(false)
-const selectedAppType = ref(null)
+const selectedAppType = ref<AppType | null>(null)
 const currentPage = ref(1)
 const totalPages = ref(1)
 const searchQuery = ref('')
@@ -34,9 +46,9 @@ const formData = ref({
 
 // Computed
 const canManageAppTypes = computed(() => {
-  return authStore.user?.permissions?.includes('apptype:create') ||
-         authStore.user?.permissions?.includes('apptype:update') ||
-         authStore.user?.permissions?.includes('apptype:delete')
+  return authStore.permissions?.some(permission => permission.name === 'apptype:create') ||
+         authStore.permissions?.some(permission => permission.name === 'apptype:update') ||
+         authStore.permissions?.some(permission => permission.name === 'apptype:delete')
 })
 
 // Methods
@@ -74,7 +86,7 @@ const handleCreate = () => {
   showCreateModal.value = true
 }
 
-const handleEdit = (appType) => {
+const handleEdit = (appType: AppType) => {
   selectedAppType.value = appType
   formData.value = {
     name: appType.name,
@@ -87,12 +99,12 @@ const handleEdit = (appType) => {
   showEditModal.value = true
 }
 
-const handleDelete = (appType) => {
+const handleDelete = (appType: AppType) => {
   selectedAppType.value = appType
   showDeleteModal.value = true
 }
 
-const handleRestore = async (appType) => {
+const handleRestore = async (appType: AppType) => {
   try {
     await appTypeAPI.restoreAppType(appType.id)
     await loadAppTypes()
@@ -115,9 +127,11 @@ const submitCreate = async () => {
 
 const submitEdit = async () => {
   try {
-    await appTypeAPI.updateAppType(selectedAppType.value.id, formData.value)
-    showEditModal.value = false
-    await loadAppTypes()
+    if (selectedAppType.value) {
+      await appTypeAPI.updateAppType(selectedAppType.value.id, formData.value)
+      showEditModal.value = false
+      await loadAppTypes()
+    }
   } catch (err) {
     error.value = 'App tipi güncellenirken hata oluştu'
     console.error(err)
@@ -126,9 +140,11 @@ const submitEdit = async () => {
 
 const submitDelete = async () => {
   try {
-    await appTypeAPI.deleteAppType(selectedAppType.value.id)
-    showDeleteModal.value = false
-    await loadAppTypes()
+    if (selectedAppType.value) {
+      await appTypeAPI.deleteAppType(selectedAppType.value.id)
+      showDeleteModal.value = false
+      await loadAppTypes()
+    }
   } catch (err) {
     error.value = 'App tipi silinirken hata oluştu'
     console.error(err)
@@ -139,7 +155,7 @@ const addFeature = () => {
   formData.value.features.push('')
 }
 
-const removeFeature = (index) => {
+const removeFeature = (index: number) => {
   formData.value.features.splice(index, 1)
 }
 
@@ -148,7 +164,7 @@ const handleSearch = () => {
   loadAppTypes()
 }
 
-const changePage = (page) => {
+const changePage = (page: number) => {
   currentPage.value = page
   loadAppTypes()
 }
