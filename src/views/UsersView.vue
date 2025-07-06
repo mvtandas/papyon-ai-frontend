@@ -22,7 +22,7 @@ interface Permission {
 }
 
 interface Role {
-  _id: string
+  id: string
   name: string
   displayName: string
   level: number
@@ -30,7 +30,7 @@ interface Role {
 }
 
 interface User {
-  _id: string
+  id: string
   username: string
   email: string
   firstName: string
@@ -111,8 +111,9 @@ const fetchUsers = async () => {
     const response = await userAPI.getUsers(filters)
     users.value = response.data.users
     pagination.value = response.data.pagination
-  } catch (err: any) {
-    error.value = err.response?.data?.message || 'Kullanıcılar yüklenirken hata oluştu'
+  } catch (err: unknown) {
+    const errorResponse = err as { response?: { data?: { message?: string } } }
+    error.value = errorResponse?.response?.data?.message || 'Kullanıcılar yüklenirken hata oluştu'
   } finally {
     loading.value = false
   }
@@ -123,7 +124,7 @@ const fetchRoles = async () => {
   try {
     const response = await roleAPI.getRoles()
     availableRoles.value = response.data.roles
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Roller yüklenirken hata:', err)
   } finally {
     loadingRoles.value = false
@@ -149,7 +150,7 @@ const handleUserAction = (user: User, action: string) => {
       break
     case 'edit-roles':
       // Rol ID'lerini kullan
-      selectedRoles.value = user.roles.map(role => role._id)
+      selectedRoles.value = user.roles.map(role => role.id)
       showRoleModal.value = true
       break
     case 'delete':
@@ -161,15 +162,16 @@ const handleUserAction = (user: User, action: string) => {
 const handleToggleUserStatus = async (user: User) => {
   try {
     if (user.isActive) {
-      await userAPI.deactivateUser(user._id)
+      await userAPI.deactivateUser(user.id)
     } else {
-      await userAPI.activateUser(user._id)
+      await userAPI.activateUser(user.id)
     }
     
     // Kullanıcı listesini güncelle
     await fetchUsers()
-  } catch (err: any) {
-    error.value = err.response?.data?.message || 'İşlem başarısız'
+  } catch (err: unknown) {
+    const errorResponse = err as { response?: { data?: { message?: string } } }
+    error.value = errorResponse?.response?.data?.message || 'İşlem başarısız'
   }
 }
 
@@ -177,11 +179,12 @@ const handleUpdateRoles = async () => {
   if (!selectedUser.value) return
   
   try {
-    await userAPI.updateUserRoles(selectedUser.value._id, selectedRoles.value)
+    await userAPI.updateUserRoles(selectedUser.value.id, selectedRoles.value)
     showRoleModal.value = false
     await fetchUsers()
-  } catch (err: any) {
-    error.value = err.response?.data?.message || 'Roller güncellenirken hata oluştu'
+  } catch (err: unknown) {
+    const errorResponse = err as { response?: { data?: { message?: string } } }
+    error.value = errorResponse?.response?.data?.message || 'Roller güncellenirken hata oluştu'
   }
 }
 
@@ -189,11 +192,12 @@ const handleDeleteUser = async () => {
   if (!selectedUser.value) return
   
   try {
-    await userAPI.deleteUser(selectedUser.value._id)
+    await userAPI.deleteUser(selectedUser.value.id)
     showDeleteModal.value = false
     await fetchUsers()
-  } catch (err: any) {
-    error.value = err.response?.data?.message || 'Kullanıcı silinirken hata oluştu'
+  } catch (err: unknown) {
+    const errorResponse = err as { response?: { data?: { message?: string } } }
+    error.value = errorResponse?.response?.data?.message || 'Kullanıcı silinirken hata oluştu'
   }
 }
 
@@ -234,7 +238,7 @@ onMounted(() => {
           <option value="">Tüm Roller</option>
           <option 
             v-for="role in availableRoles" 
-            :key="role._id" 
+            :key="role.id" 
             :value="role.name"
           >
             {{ role.displayName }}
@@ -281,7 +285,7 @@ onMounted(() => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="user in users" :key="user._id">
+            <tr v-for="user in users" :key="user.id">
               <td class="user-cell">
                 <div class="user-info">
                   <div class="user-avatar">
@@ -298,7 +302,7 @@ onMounted(() => {
                 <div class="roles-container">
                   <span 
                     v-for="role in user.roles" 
-                    :key="role._id"
+                    :key="role.id"
                     class="role-badge"
                     :class="role.name.toLowerCase()"
                   >
@@ -347,7 +351,7 @@ onMounted(() => {
                   </button>
                   
                   <button 
-                    v-if="canManageUsers && user._id !== authStore.user?.id"
+                    v-if="canManageUsers && user.id !== authStore.user?.id"
                     @click="handleUserAction(user, 'delete')"
                     class="action-btn delete-btn"
                     title="Sil"
@@ -427,7 +431,7 @@ onMounted(() => {
               <div class="roles-container">
                 <span 
                   v-for="role in selectedUser.roles" 
-                  :key="role._id"
+                  :key="role.id"
                   class="role-badge"
                   :class="role.name.toLowerCase()"
                 >
@@ -498,12 +502,12 @@ onMounted(() => {
           <div v-else class="role-selection">
             <label 
               v-for="role in availableRoles" 
-              :key="role._id"
+              :key="role.id"
               class="role-checkbox"
             >
               <input 
                 type="checkbox" 
-                :value="role._id"
+                :value="role.id"
                 v-model="selectedRoles"
               />
               <div class="role-info">

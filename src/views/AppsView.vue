@@ -310,7 +310,7 @@ const loadMembers = async () => {
   membersLoading.value = true;
   try {
     const response = await appAPI.getAppMembers(selectedApp.value._id);
-    members.value = response.data;
+    members.value = response.data as Member[];
   } catch (err) {
     error.value = "Üyeler yüklenirken hata oluştu";
     console.error(err);
