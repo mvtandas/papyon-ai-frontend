@@ -450,18 +450,18 @@ const handleSearch = () => {
   loadApps();
 };
 
-const changePage = (page: number) => {
+const handlePageChange = (page: number) => {
   currentPage.value = page;
   loadApps();
 };
 
-const switchViewMode = (mode: string) => {
+const handleViewModeChange = (mode: 'my' | 'public') => {
   viewMode.value = mode;
   currentPage.value = 1;
   loadApps();
 };
 
-const handleViewDetails = (app: App) => {
+const handleAppClick = (app: App) => {
   router.push(`/apps/${app._id}`);
 };
 
@@ -483,14 +483,14 @@ onMounted(() => {
       <div class="header-actions">
         <div class="view-tabs">
           <button
-            @click="switchViewMode('my')"
+            @click="handleViewModeChange('my')"
             :class="{ active: viewMode === 'my' }"
             class="tab-button"
           >
             Benim App'lerim
           </button>
           <button
-            @click="switchViewMode('public')"
+            @click="handleViewModeChange('public')"
             :class="{ active: viewMode === 'public' }"
             class="tab-button"
           >
@@ -588,7 +588,7 @@ onMounted(() => {
             <h3 class="app-name">{{ app.name }}</h3>
             <p class="app-description">{{ app.description }}</p>
             <div class="app-meta">
-              <span class="app-type">{{ app.appTypeName }}</span>
+              <span class="app-type">{{ app.appTypeName || 'Bilinmeyen Tip' }}</span>
               <span
                 class="app-visibility"
                 :class="app.isPublic ? 'public' : 'private'"
@@ -600,7 +600,7 @@ onMounted(() => {
           <div class="card-actions">
             <button
               class="view-btn"
-              @click="handleViewDetails(app)"
+              @click="handleAppClick(app)"
               title="Detayları Görüntüle"
             >
               <EyeIcon class="w-4 h-4" />
@@ -686,7 +686,7 @@ onMounted(() => {
     <!-- Pagination -->
     <div v-if="totalPages > 1" class="pagination">
       <button
-        @click="changePage(currentPage - 1)"
+        @click="handlePageChange(currentPage - 1)"
         :disabled="currentPage === 1"
         class="pagination-button"
       >
@@ -698,7 +698,7 @@ onMounted(() => {
       </span>
 
       <button
-        @click="changePage(currentPage + 1)"
+        @click="handlePageChange(currentPage + 1)"
         :disabled="currentPage === totalPages"
         class="pagination-button"
       >
@@ -1016,7 +1016,7 @@ onMounted(() => {
 
           <div v-else class="members-list">
             <div
-              v-for="member in members"
+              v-for="member in members as Member[]"
               :key="member.userId"
               class="member-item"
             >
@@ -1179,7 +1179,7 @@ onMounted(() => {
 
           <div class="data-fields">
             <div
-              v-for="field in dataFields"
+              v-for="field in dataFields as DataField[]"
               :key="field.key"
               class="data-field"
             >
