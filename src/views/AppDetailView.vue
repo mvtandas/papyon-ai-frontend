@@ -1144,7 +1144,7 @@ onMounted(() => {
                 <div>
                   <label class="block text-sm font-medium text-gray-700 mb-2">Uygulama ID</label>
                   <input 
-                    :value="app?.id" 
+                    :value="app?._id" 
                     readonly 
                     class="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600"
                   />
@@ -1152,7 +1152,7 @@ onMounted(() => {
                 <div>
                   <label class="block text-sm font-medium text-gray-700 mb-2">Tür</label>
                   <input 
-                    :value="app?.type?.name" 
+                    :value="app?.type?.name || 'Bilinmeyen Tür'" 
                     readonly 
                     class="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600"
                   />
@@ -1161,7 +1161,7 @@ onMounted(() => {
                   <label class="block text-sm font-medium text-gray-700 mb-2">QR Kod URL</label>
                   <div class="flex gap-2">
                     <input 
-                      :value="app?.qr_url" 
+                      :value="app?.qr_url || 'QR kod yok'" 
                       readonly 
                       class="flex-1 px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600"
                     />
@@ -1177,7 +1177,7 @@ onMounted(() => {
                 <div>
                   <label class="block text-sm font-medium text-gray-700 mb-2">Oluşturulma Tarihi</label>
                   <input 
-                    :value="formatDate(app?.created_at)" 
+                    :value="formatDate(app?.createdAt || '')" 
                     readonly 
                     class="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600"
                   />

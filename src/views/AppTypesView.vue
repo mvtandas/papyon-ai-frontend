@@ -46,9 +46,9 @@ const formData = ref({
 
 // Computed
 const canManageAppTypes = computed(() => {
-  return authStore.permissions?.some(permission => permission.name === 'apptype:create') ||
-         authStore.permissions?.some(permission => permission.name === 'apptype:update') ||
-         authStore.permissions?.some(permission => permission.name === 'apptype:delete')
+  return authStore.user?.roles?.some(role => 
+    role.name === 'SUPER_ADMIN' || role.name === 'ADMIN'
+  )
 })
 
 // Methods
