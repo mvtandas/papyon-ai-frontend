@@ -2,7 +2,6 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { appAPI } from '@/services/api'
-import { useAuthStore } from '@/stores/auth'
 
 // Types
 interface App {
@@ -91,17 +90,18 @@ interface App {
 interface MenuCategory {
   category: string
   items: MenuItem[]
+  isVisible?: boolean
 }
 
 interface MenuItem {
   name: string
   price: string
   description?: string
+  isVisible?: boolean
 }
 
 const route = useRoute()
 const router = useRouter()
-const authStore = useAuthStore()
 
 // State
 const app = ref<App | null>(null)
@@ -126,13 +126,19 @@ const hasMenu = computed(() => {
 })
 
 const menuStats = computed(() => {
-  if (!hasMenu.value) return { categories: 0, items: 0 }
+  if (!hasMenu.value) return { categories: 0, items: 0, visibleCategories: 0, visibleItems: 0 }
   
   const menu = app.value!.data!.menu as MenuCategory[]
   const categories = menu.length
   const items = menu.reduce((total, category) => total + category.items.length, 0)
   
-  return { categories, items }
+  const visibleCategories = menu.filter(category => category.isVisible !== false).length
+  const visibleItems = menu.reduce((total, category) => {
+    if (category.isVisible === false) return total
+    return total + category.items.filter(item => item.isVisible !== false).length
+  }, 0)
+  
+  return { categories, items, visibleCategories, visibleItems }
 })
 
 const canEdit = computed(() => true) // Geçici olarak herkese düzenleme izni ver
@@ -141,6 +147,7 @@ const canDelete = computed(() => true) // Geçici olarak herkese silme izni ver
 const filteredAppData = computed(() => {
   if (!app.value?.data) return {}
   
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { menu, ...otherData } = app.value.data
   return otherData
 })
@@ -287,16 +294,19 @@ const loadApp = async () => {
         menu: [
           {
             category: "İçecekler",
+            isVisible: true,
             items: [
               {
                 name: "Türk Kahvesi",
                 price: "₺25.00",
-                description: "Geleneksel Türk kahvesi"
+                description: "Geleneksel Türk kahvesi",
+                isVisible: true
               },
               {
                 name: "Çay",
                 price: "₺15.00",
-                description: "Bergamot aromalı"
+                description: "Bergamot aromalı",
+                isVisible: true
               }
             ]
           }
@@ -370,7 +380,8 @@ const addCategory = async () => {
   if (Array.isArray(app.value.data.menu)) {
     app.value.data.menu.push({
       category: newCategory.value.category.trim(),
-      items: []
+      items: [],
+      isVisible: true
     })
   }
   
@@ -406,7 +417,8 @@ const addItem = async (categoryIndex: number) => {
   
   const item: MenuItem = {
     name: newItem.value.name.trim(),
-    price: newItem.value.price.trim()
+    price: newItem.value.price.trim(),
+    isVisible: true
   }
   
   if (newItem.value.description.trim()) {
@@ -484,6 +496,27 @@ const moveItemDown = async (categoryIndex: number, itemIndex: number) => {
   
   ;[items[itemIndex], items[itemIndex + 1]] = [items[itemIndex + 1], items[itemIndex]]
   
+  await saveMenuData()
+}
+
+// Visibility toggle fonksiyonları
+const toggleCategoryVisibility = async (categoryIndex: number) => {
+  if (!app.value?.data?.menu || !Array.isArray(app.value.data.menu) || !canEdit.value) return
+  
+  const menu = app.value.data.menu
+  if (!menu[categoryIndex]) return
+  
+  menu[categoryIndex].isVisible = !menu[categoryIndex].isVisible
+  await saveMenuData()
+}
+
+const toggleItemVisibility = async (categoryIndex: number, itemIndex: number) => {
+  if (!app.value?.data?.menu || !Array.isArray(app.value.data.menu) || !canEdit.value) return
+  
+  const menu = app.value.data.menu
+  if (!menu[categoryIndex] || !menu[categoryIndex].items[itemIndex]) return
+  
+  menu[categoryIndex].items[itemIndex].isVisible = !menu[categoryIndex].items[itemIndex].isVisible
   await saveMenuData()
 }
 
@@ -672,7 +705,7 @@ onMounted(() => {
               <div class="ml-5 w-0 flex-1">
                 <dl>
                   <dt class="text-sm font-medium text-gray-500 truncate">Kategoriler</dt>
-                  <dd class="text-lg font-medium text-gray-900">{{ menuStats.categories }}</dd>
+                  <dd class="text-lg font-medium text-gray-900">{{ menuStats.visibleCategories }}/{{ menuStats.categories }}</dd>
                 </dl>
               </div>
             </div>
@@ -690,7 +723,7 @@ onMounted(() => {
               <div class="ml-5 w-0 flex-1">
                 <dl>
                   <dt class="text-sm font-medium text-gray-500 truncate">Ürünler</dt>
-                  <dd class="text-lg font-medium text-gray-900">{{ menuStats.items }}</dd>
+                  <dd class="text-lg font-medium text-gray-900">{{ menuStats.visibleItems }}/{{ menuStats.items }}</dd>
                 </dl>
               </div>
             </div>
@@ -783,14 +816,18 @@ onMounted(() => {
               <p class="text-sm text-gray-500">Kategoriler ve ürünleri yönetin</p>
             </div>
             <div v-if="hasMenu" class="text-right">
-              <p class="text-sm text-gray-500">{{ menuStats.categories }} kategori, {{ menuStats.items }} ürün</p>
+              <p class="text-sm text-gray-500">
+                {{ menuStats.categories }} kategori ({{ menuStats.visibleCategories }} görünür), 
+                {{ menuStats.items }} ürün ({{ menuStats.visibleItems }} görünür)
+              </p>
             </div>
           </div>
 
           <!-- Menü içeriği -->
           <div v-if="hasMenu" class="space-y-6">
             <!-- Mevcut Kategoriler -->
-            <div v-for="(category, categoryIndex) in (app.data!.menu as MenuCategory[])" :key="categoryIndex" class="border border-gray-200 rounded-lg overflow-hidden">
+            <div v-for="(category, categoryIndex) in (app.data!.menu as MenuCategory[])" :key="categoryIndex" 
+                 :class="category.isVisible === false ? 'border border-gray-300 rounded-lg overflow-hidden bg-gray-50 opacity-60' : 'border border-gray-200 rounded-lg overflow-hidden'">
               <!-- Kategori Başlığı -->
               <div class="bg-gray-50 px-6 py-4 border-b border-gray-200">
                 <div class="flex justify-between items-center">
@@ -809,7 +846,26 @@ onMounted(() => {
                       Kaydet
                     </button>
                   </div>
-                  <h4 v-else class="text-lg font-semibold text-gray-900 flex-1">{{ category.category }}</h4>
+                  <div v-else class="flex-1 flex items-center gap-3">
+                    <h4 :class="category.isVisible === false ? 'text-lg font-semibold text-gray-500 line-through' : 'text-lg font-semibold text-gray-900'">
+                      {{ category.category }}
+                      <span v-if="category.isVisible === false" class="ml-2 text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded-full">GİZLİ</span>
+                    </h4>
+                    <button 
+                      @click="toggleCategoryVisibility(categoryIndex)"
+                      :class="category.isVisible !== false ? 'text-green-600 hover:bg-green-100' : 'text-gray-400 hover:bg-gray-100'"
+                      class="p-1 rounded-lg transition-colors"
+                      :title="category.isVisible !== false ? 'Görünür - Gizlemek için tıklayın' : 'Gizli - Göstermek için tıklayın'"
+                    >
+                      <svg v-if="category.isVisible !== false" fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-5 h-5">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                      <svg v-else fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-5 h-5">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
+                      </svg>
+                    </button>
+                  </div>
                   
                   <div v-if="canEdit" class="flex gap-2">
                     <!-- Sıralama Butonları -->
@@ -868,7 +924,7 @@ onMounted(() => {
                   <div
                     v-for="(item, itemIndex) in category.items"
                     :key="itemIndex"
-                    class="bg-gray-50 rounded-lg p-4 border border-gray-200 hover:border-gray-300 transition-colors"
+                    :class="item.isVisible === false ? 'bg-gray-100 rounded-lg p-4 border border-gray-300 opacity-60' : 'bg-gray-50 rounded-lg p-4 border border-gray-200 hover:border-gray-300 transition-colors'"
                   >
                     <!-- Düzenleme Modu -->
                     <div v-if="editingItem?.categoryIndex === categoryIndex && editingItem?.itemIndex === itemIndex" class="space-y-4">
@@ -918,12 +974,30 @@ onMounted(() => {
                     <!-- Görüntüleme Modu -->
                     <div v-else class="flex justify-between items-start">
                       <div class="flex-1 pr-4">
-                        <h5 class="font-semibold text-gray-900 mb-1">{{ item.name }}</h5>
-                        <p v-if="item.description" class="text-sm text-gray-600 leading-relaxed mb-2">{{ item.description }}</p>
+                        <h5 :class="item.isVisible === false ? 'font-semibold text-gray-500 mb-1 line-through' : 'font-semibold text-gray-900 mb-1'">
+                          {{ item.name }}
+                          <span v-if="item.isVisible === false" class="ml-2 text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded-full">GİZLİ</span>
+                        </h5>
+                        <p v-if="item.description" :class="item.isVisible === false ? 'text-sm text-gray-400 leading-relaxed mb-2' : 'text-sm text-gray-600 leading-relaxed mb-2'">{{ item.description }}</p>
                       </div>
                       <div class="flex items-center gap-4">
                         <div class="text-lg font-bold text-blue-600">{{ item.price }}</div>
                         <div v-if="canEdit" class="flex gap-2 items-center">
+                          <!-- Visibility Toggle -->
+                          <button 
+                            @click="toggleItemVisibility(categoryIndex, itemIndex)"
+                            :class="item.isVisible !== false ? 'text-green-600 hover:bg-green-100' : 'text-gray-400 hover:bg-gray-100'"
+                            class="p-1 rounded-lg transition-colors"
+                            :title="item.isVisible !== false ? 'Görünür - Gizlemek için tıklayın' : 'Gizli - Göstermek için tıklayın'"
+                          >
+                            <svg v-if="item.isVisible !== false" fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-4 h-4">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                            <svg v-else fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-4 h-4">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
+                            </svg>
+                          </button>
                           <!-- Sıralama Butonları -->
                           <div class="flex flex-col gap-1">
                             <button 
