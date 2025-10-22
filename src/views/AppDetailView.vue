@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, nextTick } from 'vue'
+import { ref, onMounted, computed, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { appAPI } from '@/services/api'
 import QRCodeStyling from 'qr-code-styling'
@@ -98,6 +98,10 @@ interface MenuItem {
   name: string
   price: string
   description?: string
+  portion?: string
+  service?: string
+  prepTime?: string
+  notes?: string
   isVisible?: boolean
 }
 
@@ -114,7 +118,15 @@ const activeTab = ref('overview')
 const editingCategory = ref<number | null>(null)
 const editingItem = ref<{ categoryIndex: number; itemIndex: number } | null>(null)
 const newCategory = ref({ category: '', items: [] as MenuItem[] })
-const newItem = ref({ name: '', price: '', description: '' })
+const newItem = ref({ 
+  name: '', 
+  price: '', 
+  description: '', 
+  portion: '', 
+  service: '', 
+  prepTime: '', 
+  notes: '' 
+})
 
 // JSON import/export için state
 const showJsonImport = ref(false)
@@ -445,12 +457,24 @@ const addItem = async (categoryIndex: number) => {
     isVisible: true
   }
   
-  if (newItem.value.description.trim()) {
+  if (newItem.value.description?.trim()) {
     item.description = newItem.value.description.trim()
+  }
+  if (newItem.value.portion?.trim()) {
+    item.portion = newItem.value.portion.trim()
+  }
+  if (newItem.value.service?.trim()) {
+    item.service = newItem.value.service.trim()
+  }
+  if (newItem.value.prepTime?.trim()) {
+    item.prepTime = newItem.value.prepTime.trim()
+  }
+  if (newItem.value.notes?.trim()) {
+    item.notes = newItem.value.notes.trim()
   }
   
   menu[categoryIndex].items.push(item)
-  newItem.value = { name: '', price: '', description: '' }
+  newItem.value = { name: '', price: '', description: '', portion: '', service: '', prepTime: '', notes: '' }
   await saveMenuData()
 }
 
@@ -595,15 +619,25 @@ const cancelJsonImport = () => {
 }
 
 // QR Kod fonksiyonları
-const generateQRCode = async () => {
+const generateQRCode = async (silent = false) => {
   if (!qrUrl.value.trim()) {
-    alert('Lütfen bir URL girin')
+    if (!silent) {
+      alert('Lütfen bir URL girin')
+    }
     return
   }
 
-  await nextTick()
+  try {
+    await nextTick()
 
-  if (qrContainer.value) {
+    if (!qrContainer.value) {
+      if (!silent) {
+        console.error('QR Container bulunamadı!')
+      }
+      return
+    }
+
+    // Önceki QR kodu temizle
     qrContainer.value.innerHTML = ''
 
     const options: Record<string, unknown> = {
@@ -643,11 +677,34 @@ const generateQRCode = async () => {
     if (qrLogoUrl.value) {
       options.image = qrLogoUrl.value
     }
-
-    qrCodeInstance.value = new QRCodeStyling(options)
-    qrCodeInstance.value.append(qrContainer.value)
+    
+    const qrCode = new QRCodeStyling(options as Record<string, unknown>)
+    qrCode.append(qrContainer.value)
+    qrCodeInstance.value = qrCode
+    
+  } catch (err) {
+    if (!silent) {
+      console.error('QR Kod oluşturma hatası:', err)
+      alert('QR kod oluşturulurken bir hata oluştu: ' + (err as Error).message)
+    }
   }
 }
+
+// Anlık önizleme için watch'lar
+watch([qrUrl, qrSize, qrDotsColor, qrBackgroundColor, qrDotsType, qrCornersSquareColor, qrCornersSquareType, qrCornersDotColor, qrCornersDotType, qrLogoUrl, qrLogoSize, qrMargin, qrErrorCorrectionLevel], () => {
+  if (qrUrl.value.trim() && activeTab.value === 'qr') {
+    generateQRCode(true)
+  }
+}, { deep: true })
+
+// Tab değiştiğinde QR oluştur
+watch(activeTab, (newTab) => {
+  if (newTab === 'qr' && qrUrl.value.trim()) {
+    nextTick(() => {
+      generateQRCode(true)
+    })
+  }
+})
 
 const handleLogoUpload = (event: Event) => {
   const target = event.target as HTMLInputElement
@@ -703,6 +760,7 @@ const resetQRSettings = () => {
   qrLogoSize.value = 0.4
   qrMargin.value = 10
   qrErrorCorrectionLevel.value = 'M'
+  qrCodeInstance.value = null
   
   if (qrContainer.value) {
     qrContainer.value.innerHTML = ''
@@ -1216,7 +1274,7 @@ onMounted(() => {
                     <div v-if="editingItem?.categoryIndex === categoryIndex && editingItem?.itemIndex === itemIndex" class="space-y-4">
                       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                          <label class="block text-sm font-medium text-gray-700 mb-1">Ürün Adı</label>
+                          <label class="block text-sm font-medium text-gray-700 mb-1">Ürün Adı *</label>
                           <input
                             v-model="item.name"
                             placeholder="Ürün adı"
@@ -1224,20 +1282,55 @@ onMounted(() => {
                           />
                         </div>
                         <div>
-                          <label class="block text-sm font-medium text-gray-700 mb-1">Fiyat</label>
+                          <label class="block text-sm font-medium text-gray-700 mb-1">Fiyat *</label>
                           <input
                             v-model="item.price"
-                            placeholder="₺400.00"
+                            placeholder="₺400"
                             class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                           />
                         </div>
                       </div>
                       <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Açıklama (İsteğe bağlı)</label>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Açıklama</label>
                         <textarea
                           v-model="item.description"
-                          placeholder="Ürün açıklaması..."
-                          rows="3"
+                          placeholder="İncecik açılmış hamurun üzerine..."
+                          rows="2"
+                          class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        ></textarea>
+                      </div>
+                      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label class="block text-sm font-medium text-gray-700 mb-1">Porsiyon</label>
+                          <input
+                            v-model="item.portion"
+                            placeholder="200 g kuşbaşı et"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label class="block text-sm font-medium text-gray-700 mb-1">Hazırlama Süresi</label>
+                          <input
+                            v-model="item.prepTime"
+                            placeholder="20 dk"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Servis Şekli</label>
+                        <input
+                          v-model="item.service"
+                          placeholder="Salata ile sıcak servis edilir"
+                          class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Notlar</label>
+                        <textarea
+                          v-model="item.notes"
+                          placeholder="Yoğunluğa göre servis süresi değişkenlik gösterebilir"
+                          rows="2"
                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                         ></textarea>
                       </div>
@@ -1260,14 +1353,42 @@ onMounted(() => {
                     <!-- Görüntüleme Modu -->
                     <div v-else class="flex justify-between items-start">
                       <div class="flex-1 pr-4">
-                        <h5 :class="item.isVisible === false ? 'font-semibold text-gray-500 mb-1 line-through' : 'font-semibold text-gray-900 mb-1'">
+                        <h5 :class="item.isVisible === false ? 'font-semibold text-gray-500 mb-2 line-through' : 'font-semibold text-gray-900 mb-2'">
                           {{ item.name }}
                           <span v-if="item.isVisible === false" class="ml-2 text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded-full">GİZLİ</span>
                         </h5>
-                        <p v-if="item.description" :class="item.isVisible === false ? 'text-sm text-gray-400 leading-relaxed mb-2' : 'text-sm text-gray-600 leading-relaxed mb-2'">{{ item.description }}</p>
+                        <p v-if="item.description" :class="item.isVisible === false ? 'text-sm text-gray-400 leading-relaxed mb-2' : 'text-sm text-gray-600 leading-relaxed mb-2'">
+                          {{ item.description }}
+                        </p>
+                        <div v-if="item.portion || item.service || item.prepTime || item.notes" class="mt-3 space-y-1">
+                          <div v-if="item.portion" class="flex items-center gap-2 text-xs text-gray-500">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-3.5 h-3.5">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6h18M3 12h18M3 18h18" />
+                            </svg>
+                            <span><strong>Porsiyon:</strong> {{ item.portion }}</span>
+                          </div>
+                          <div v-if="item.prepTime" class="flex items-center gap-2 text-xs text-gray-500">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-3.5 h-3.5">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span><strong>Süre:</strong> {{ item.prepTime }}</span>
+                          </div>
+                          <div v-if="item.service" class="flex items-center gap-2 text-xs text-gray-500">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-3.5 h-3.5">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                            </svg>
+                            <span><strong>Servis:</strong> {{ item.service }}</span>
+                          </div>
+                          <div v-if="item.notes" class="flex items-start gap-2 text-xs text-gray-500 italic">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-3.5 h-3.5 mt-0.5 flex-shrink-0">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span>{{ item.notes }}</span>
+                          </div>
+                        </div>
                       </div>
                       <div class="flex items-center gap-4">
-                        <div class="text-lg font-bold text-blue-600">{{ item.price }}</div>
+                        <div class="text-lg font-bold text-blue-600 whitespace-nowrap">{{ item.price }}</div>
                         <div v-if="canEdit" class="flex gap-2 items-center">
                           <!-- Visibility Toggle -->
                           <button 
@@ -1344,7 +1465,7 @@ onMounted(() => {
                         <label class="block text-sm font-medium text-blue-700 mb-1">Ürün Adı *</label>
                         <input
                           v-model="newItem.name"
-                          placeholder="Ürün adı"
+                          placeholder="Bıçak Arası"
                           class="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                       </div>
@@ -1352,7 +1473,7 @@ onMounted(() => {
                         <label class="block text-sm font-medium text-blue-700 mb-1">Fiyat *</label>
                         <input
                           v-model="newItem.price"
-                          placeholder="₺400.00"
+                          placeholder="₺400"
                           class="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                       </div>
@@ -1361,7 +1482,42 @@ onMounted(() => {
                       <label class="block text-sm font-medium text-blue-700 mb-1">Açıklama</label>
                       <textarea
                         v-model="newItem.description"
-                        placeholder="Ürün açıklaması (isteğe bağlı)"
+                        placeholder="İncecik açılmış hamurun üzerine..."
+                        rows="2"
+                        class="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      ></textarea>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label class="block text-sm font-medium text-blue-700 mb-1">Porsiyon</label>
+                        <input
+                          v-model="newItem.portion"
+                          placeholder="200 g kuşbaşı et"
+                          class="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label class="block text-sm font-medium text-blue-700 mb-1">Hazırlama Süresi</label>
+                        <input
+                          v-model="newItem.prepTime"
+                          placeholder="20 dk"
+                          class="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium text-blue-700 mb-1">Servis Şekli</label>
+                      <input
+                        v-model="newItem.service"
+                        placeholder="Salata ile sıcak servis edilir"
+                        class="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium text-blue-700 mb-1">Notlar</label>
+                      <textarea
+                        v-model="newItem.notes"
+                        placeholder="Yoğunluğa göre servis süresi değişkenlik gösterebilir"
                         rows="2"
                         class="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       ></textarea>
@@ -1722,24 +1878,30 @@ onMounted(() => {
                 </div>
               </div>
 
-              <!-- Butonlar -->
-              <div class="flex gap-3 pt-4">
-                <button
-                  @click="generateQRCode"
-                  :disabled="!qrUrl.trim()"
-                  class="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-semibold transition-colors"
-                >
-                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-5 h-5">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              <!-- Anlık Önizleme Bilgisi -->
+              <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                <div class="flex items-start gap-2">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
-                  QR Kod Oluştur
-                </button>
+                  <div>
+                    <p class="text-sm font-semibold text-green-800">Anlık Önizleme Aktif</p>
+                    <p class="text-xs text-green-700 mt-1">Yaptığınız her değişiklik anında QR koda yansıyacaktır</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Butonlar -->
+              <div class="flex gap-3">
                 <button
                   @click="resetQRSettings"
-                  class="px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-semibold transition-colors"
+                  class="flex-1 px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-semibold transition-colors flex items-center justify-center gap-2"
                   title="Ayarları sıfırla"
                 >
-                  🔄
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-5 h-5">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Ayarları Sıfırla
                 </button>
               </div>
             </div>
@@ -1747,13 +1909,13 @@ onMounted(() => {
             <!-- Sağ Panel - Önizleme ve İndirme -->
             <div class="space-y-6">
               <div class="bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-8 flex items-center justify-center min-h-[400px]">
-                <div v-if="qrCodeInstance" class="text-center">
+                <div v-if="qrUrl.trim()" class="text-center">
                   <div ref="qrContainer" class="inline-block"></div>
                 </div>
                 <div v-else class="text-center text-gray-500">
                   <div class="text-6xl mb-4">📱</div>
                   <p class="text-lg font-medium mb-2">QR Kod Önizlemesi</p>
-                  <p class="text-sm">Ayarları yapın ve "QR Kod Oluştur" butonuna tıklayın</p>
+                  <p class="text-sm">Bir URL girin, QR kodunuz otomatik olarak oluşturulacak</p>
                 </div>
               </div>
 
