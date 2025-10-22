@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { appAPI } from '@/services/api'
+import QRCodeStyling from 'qr-code-styling'
 
 // Types
 interface App {
@@ -114,6 +115,29 @@ const editingCategory = ref<number | null>(null)
 const editingItem = ref<{ categoryIndex: number; itemIndex: number } | null>(null)
 const newCategory = ref({ category: '', items: [] as MenuItem[] })
 const newItem = ref({ name: '', price: '', description: '' })
+
+// JSON import/export için state
+const showJsonImport = ref(false)
+const jsonImportText = ref('')
+const jsonImportError = ref<string | null>(null)
+
+// QR Kod oluşturma için state
+const qrUrl = ref('')
+const qrSize = ref(300)
+const qrDotsColor = ref('#000000')
+const qrBackgroundColor = ref('#ffffff')
+const qrDotsType = ref<'rounded' | 'dots' | 'classy' | 'classy-rounded' | 'square' | 'extra-rounded'>('rounded')
+const qrCornersSquareColor = ref('#000000')
+const qrCornersSquareType = ref<'dot' | 'square' | 'extra-rounded'>('square')
+const qrCornersDotColor = ref('#000000')
+const qrCornersDotType = ref<'dot' | 'square'>('dot')
+const qrLogoFile = ref<File | null>(null)
+const qrLogoUrl = ref<string>('')
+const qrLogoSize = ref(0.4)
+const qrMargin = ref(10)
+const qrErrorCorrectionLevel = ref<'L' | 'M' | 'Q' | 'H'>('M')
+const qrCodeInstance = ref<QRCodeStyling | null>(null)
+const qrContainer = ref<HTMLElement | null>(null)
 
 // Veri düzenleme için state
 const editingField = ref<string | null>(null)
@@ -520,6 +544,171 @@ const toggleItemVisibility = async (categoryIndex: number, itemIndex: number) =>
   await saveMenuData()
 }
 
+// JSON Import/Export fonksiyonları
+const exportMenuAsJson = async () => {
+  if (!app.value?.data?.menu) return
+  
+  try {
+    const menuJson = JSON.stringify(app.value.data.menu, null, 2)
+    await navigator.clipboard.writeText(menuJson)
+    alert('Menü JSON formatında panoya kopyalandı!')
+  } catch (err) {
+    console.error('Kopyalama hatası:', err)
+    alert('Menü kopyalanırken bir hata oluştu')
+  }
+}
+
+const importMenuFromJson = async () => {
+  if (!app.value || !canEdit.value) return
+  
+  try {
+    jsonImportError.value = null
+    const parsedMenu = JSON.parse(jsonImportText.value)
+    
+    // Basit validasyon
+    if (!Array.isArray(parsedMenu)) {
+      jsonImportError.value = 'Menü bir dizi (array) olmalıdır'
+      return
+    }
+    
+    // Menüyü güncelle
+    if (!app.value.data) app.value.data = {}
+    app.value.data.menu = parsedMenu
+    
+    await saveMenuData()
+    
+    // Başarılı olursa formu kapat ve temizle
+    showJsonImport.value = false
+    jsonImportText.value = ''
+    alert('Menü başarıyla içe aktarıldı!')
+    
+  } catch (err) {
+    console.error('JSON parse hatası:', err)
+    jsonImportError.value = 'Geçersiz JSON formatı. Lütfen doğru formatta bir JSON girin.'
+  }
+}
+
+const cancelJsonImport = () => {
+  showJsonImport.value = false
+  jsonImportText.value = ''
+  jsonImportError.value = null
+}
+
+// QR Kod fonksiyonları
+const generateQRCode = async () => {
+  if (!qrUrl.value.trim()) {
+    alert('Lütfen bir URL girin')
+    return
+  }
+
+  await nextTick()
+
+  if (qrContainer.value) {
+    qrContainer.value.innerHTML = ''
+
+    const options: Record<string, unknown> = {
+      width: qrSize.value,
+      height: qrSize.value,
+      type: 'svg',
+      data: qrUrl.value,
+      margin: qrMargin.value,
+      qrOptions: {
+        typeNumber: 0,
+        mode: 'Byte',
+        errorCorrectionLevel: qrErrorCorrectionLevel.value
+      },
+      imageOptions: {
+        hideBackgroundDots: true,
+        imageSize: qrLogoSize.value,
+        margin: 5,
+        crossOrigin: 'anonymous'
+      },
+      dotsOptions: {
+        color: qrDotsColor.value,
+        type: qrDotsType.value
+      },
+      backgroundOptions: {
+        color: qrBackgroundColor.value
+      },
+      cornersSquareOptions: {
+        color: qrCornersSquareColor.value,
+        type: qrCornersSquareType.value
+      },
+      cornersDotOptions: {
+        color: qrCornersDotColor.value,
+        type: qrCornersDotType.value
+      }
+    }
+
+    if (qrLogoUrl.value) {
+      options.image = qrLogoUrl.value
+    }
+
+    qrCodeInstance.value = new QRCodeStyling(options)
+    qrCodeInstance.value.append(qrContainer.value)
+  }
+}
+
+const handleLogoUpload = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  
+  if (file) {
+    if (file.size > 2 * 1024 * 1024) { // 2MB limit
+      alert('Logo boyutu 2MB\'dan küçük olmalıdır')
+      return
+    }
+    
+    qrLogoFile.value = file
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      qrLogoUrl.value = e.target?.result as string
+    }
+    reader.readAsDataURL(file)
+  }
+}
+
+const removeLogo = () => {
+  qrLogoFile.value = null
+  qrLogoUrl.value = ''
+}
+
+const downloadQRCode = (format: 'png' | 'svg' | 'jpeg' | 'webp') => {
+  if (!qrCodeInstance.value) {
+    alert('Önce QR kod oluşturun')
+    return
+  }
+
+  const extension = format
+  const fileName = `qr-code-${Date.now()}.${extension}`
+
+  qrCodeInstance.value.download({
+    name: fileName,
+    extension: extension
+  })
+}
+
+const resetQRSettings = () => {
+  qrUrl.value = app.value?.qr_url || ''
+  qrSize.value = 300
+  qrDotsColor.value = '#000000'
+  qrBackgroundColor.value = '#ffffff'
+  qrDotsType.value = 'rounded'
+  qrCornersSquareColor.value = '#000000'
+  qrCornersSquareType.value = 'square'
+  qrCornersDotColor.value = '#000000'
+  qrCornersDotType.value = 'dot'
+  qrLogoFile.value = null
+  qrLogoUrl.value = ''
+  qrLogoSize.value = 0.4
+  qrMargin.value = 10
+  qrErrorCorrectionLevel.value = 'M'
+  
+  if (qrContainer.value) {
+    qrContainer.value.innerHTML = ''
+  }
+}
+
 const deleteApp = async () => {
   if (!app.value || !canDelete.value) return
   if (!confirm('Bu app\'i tamamen silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.')) return
@@ -657,6 +846,13 @@ onMounted(() => {
             class="whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors"
           >
             📄 Veri Yönetimi
+          </button>
+          <button
+            @click="activeTab = 'qr'"
+            :class="activeTab === 'qr' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+            class="whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors"
+          >
+            📱 QR Kod Oluştur
           </button>
           <button
             @click="activeTab = 'settings'"
@@ -815,11 +1011,101 @@ onMounted(() => {
               <h3 class="text-lg font-medium text-gray-900">🍽️ Menü Yönetimi</h3>
               <p class="text-sm text-gray-500">Kategoriler ve ürünleri yönetin</p>
             </div>
-            <div v-if="hasMenu" class="text-right">
-              <p class="text-sm text-gray-500">
-                {{ menuStats.categories }} kategori ({{ menuStats.visibleCategories }} görünür), 
-                {{ menuStats.items }} ürün ({{ menuStats.visibleItems }} görünür)
-              </p>
+            <div class="flex items-center gap-4">
+              <!-- JSON İşlemleri -->
+              <div v-if="canEdit" class="flex gap-2">
+                <button 
+                  v-if="hasMenu"
+                  @click="exportMenuAsJson"
+                  class="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors"
+                  title="Menüyü JSON olarak dışa aktar"
+                >
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  JSON Olarak Kopyala
+                </button>
+                <button 
+                  @click="showJsonImport = true"
+                  class="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors"
+                  title="JSON'dan menü yükle"
+                >
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                  JSON'dan Yükle
+                </button>
+              </div>
+              <div v-if="hasMenu" class="text-right border-l border-gray-300 pl-4">
+                <p class="text-sm text-gray-500">
+                  {{ menuStats.categories }} kategori ({{ menuStats.visibleCategories }} görünür), 
+                  {{ menuStats.items }} ürün ({{ menuStats.visibleItems }} görünür)
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- JSON Import Modal -->
+          <div v-if="showJsonImport" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div class="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+              <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center sticky top-0 bg-white">
+                <div>
+                  <h4 class="text-lg font-semibold text-gray-900">JSON'dan Menü Yükle</h4>
+                  <p class="text-sm text-gray-500">Menüyü JSON formatında yapıştırın</p>
+                </div>
+                <button 
+                  @click="cancelJsonImport"
+                  class="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-6 h-6">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div class="p-6 space-y-4">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-2">
+                    JSON Verisi
+                  </label>
+                  <textarea
+                    v-model="jsonImportText"
+                    placeholder='[{"category": "İçecekler", "isVisible": true, "items": [{"name": "Çay", "price": "₺15.00", "description": "Bergamot aromalı", "isVisible": true}]}]'
+                    rows="20"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-sm"
+                  ></textarea>
+                  <p class="text-xs text-gray-500 mt-1">
+                    Menünüz bir dizi (array) olmalı ve her kategori "category", "isVisible" ve "items" alanlarına sahip olmalıdır.
+                  </p>
+                </div>
+                
+                <div v-if="jsonImportError" class="p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <div class="flex items-start gap-2">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p class="text-sm text-red-700">{{ jsonImportError }}</p>
+                  </div>
+                </div>
+                
+                <div class="flex gap-3 pt-4">
+                  <button 
+                    @click="importMenuFromJson"
+                    :disabled="!jsonImportText.trim()"
+                    class="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium transition-colors"
+                  >
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-5 h-5">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    Menüyü Yükle
+                  </button>
+                  <button 
+                    @click="cancelJsonImport"
+                    class="px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-medium transition-colors"
+                  >
+                    İptal
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1199,6 +1485,336 @@ onMounted(() => {
                     </button>
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- QR Kod Oluştur -->
+      <div v-else-if="activeTab === 'qr'" class="space-y-6">
+        <div class="bg-white rounded-lg shadow p-6">
+          <div class="mb-6">
+            <h3 class="text-lg font-medium text-gray-900 mb-2">📱 QR Kod Oluşturucu</h3>
+            <p class="text-sm text-gray-500">Özelleştirilmiş QR kodunuzu oluşturun ve indirin</p>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Sol Panel - Ayarlar -->
+            <div class="space-y-6">
+              <!-- URL Girişi -->
+              <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700">
+                  URL <span class="text-red-500">*</span>
+                </label>
+                <input
+                  v-model="qrUrl"
+                  type="url"
+                  placeholder="https://example.com"
+                  class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p class="text-xs text-gray-500">QR kod ile erişilmesini istediğiniz URL'yi girin</p>
+              </div>
+
+              <!-- Boyut -->
+              <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700">
+                  Boyut: {{ qrSize }}x{{ qrSize }}px
+                </label>
+                <input
+                  v-model.number="qrSize"
+                  type="range"
+                  min="200"
+                  max="800"
+                  step="50"
+                  class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+                <div class="flex justify-between text-xs text-gray-500">
+                  <span>200px</span>
+                  <span>800px</span>
+                </div>
+              </div>
+
+              <!-- Renkler -->
+              <div class="grid grid-cols-2 gap-4">
+                <div class="space-y-2">
+                  <label class="block text-sm font-medium text-gray-700">QR Kod Rengi</label>
+                  <div class="flex gap-2">
+                    <input
+                      v-model="qrDotsColor"
+                      type="color"
+                      class="w-12 h-12 rounded-lg cursor-pointer border-2 border-gray-300"
+                    />
+                    <input
+                      v-model="qrDotsColor"
+                      type="text"
+                      class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                    />
+                  </div>
+                </div>
+                <div class="space-y-2">
+                  <label class="block text-sm font-medium text-gray-700">Arkaplan Rengi</label>
+                  <div class="flex gap-2">
+                    <input
+                      v-model="qrBackgroundColor"
+                      type="color"
+                      class="w-12 h-12 rounded-lg cursor-pointer border-2 border-gray-300"
+                    />
+                    <input
+                      v-model="qrBackgroundColor"
+                      type="text"
+                      class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Nokta Stili -->
+              <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700">Nokta Stili</label>
+                <select
+                  v-model="qrDotsType"
+                  class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="rounded">Yuvarlatılmış</option>
+                  <option value="dots">Noktalar</option>
+                  <option value="classy">Şık</option>
+                  <option value="classy-rounded">Şık Yuvarlatılmış</option>
+                  <option value="square">Kare</option>
+                  <option value="extra-rounded">Ekstra Yuvarlatılmış</option>
+                </select>
+              </div>
+
+              <!-- Köşe Kareleri -->
+              <div class="grid grid-cols-2 gap-4">
+                <div class="space-y-2">
+                  <label class="block text-sm font-medium text-gray-700">Köşe Kare Rengi</label>
+                  <div class="flex gap-2">
+                    <input
+                      v-model="qrCornersSquareColor"
+                      type="color"
+                      class="w-12 h-12 rounded-lg cursor-pointer border-2 border-gray-300"
+                    />
+                    <input
+                      v-model="qrCornersSquareColor"
+                      type="text"
+                      class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                    />
+                  </div>
+                </div>
+                <div class="space-y-2">
+                  <label class="block text-sm font-medium text-gray-700">Köşe Kare Stili</label>
+                  <select
+                    v-model="qrCornersSquareType"
+                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="square">Kare</option>
+                    <option value="dot">Nokta</option>
+                    <option value="extra-rounded">Ekstra Yuvarlatılmış</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Köşe Noktaları -->
+              <div class="grid grid-cols-2 gap-4">
+                <div class="space-y-2">
+                  <label class="block text-sm font-medium text-gray-700">Köşe Nokta Rengi</label>
+                  <div class="flex gap-2">
+                    <input
+                      v-model="qrCornersDotColor"
+                      type="color"
+                      class="w-12 h-12 rounded-lg cursor-pointer border-2 border-gray-300"
+                    />
+                    <input
+                      v-model="qrCornersDotColor"
+                      type="text"
+                      class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                    />
+                  </div>
+                </div>
+                <div class="space-y-2">
+                  <label class="block text-sm font-medium text-gray-700">Köşe Nokta Stili</label>
+                  <select
+                    v-model="qrCornersDotType"
+                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="dot">Nokta</option>
+                    <option value="square">Kare</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Logo Yükleme -->
+              <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700">Logo (İsteğe Bağlı)</label>
+                <div v-if="qrLogoUrl" class="mb-3 relative inline-block">
+                  <img :src="qrLogoUrl" alt="Logo" class="w-20 h-20 object-contain border border-gray-300 rounded-lg" />
+                  <button
+                    @click="removeLogo"
+                    class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600 transition-colors"
+                    title="Logoyu kaldır"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <input
+                  @change="handleLogoUpload"
+                  type="file"
+                  accept="image/*"
+                  class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                />
+                <p class="text-xs text-gray-500">Maksimum 2MB. PNG, JPG, SVG formatları desteklenir</p>
+              </div>
+
+              <!-- Logo Boyutu -->
+              <div v-if="qrLogoUrl" class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700">
+                  Logo Boyutu: {{ Math.round(qrLogoSize * 100) }}%
+                </label>
+                <input
+                  v-model.number="qrLogoSize"
+                  type="range"
+                  min="0.2"
+                  max="0.6"
+                  step="0.05"
+                  class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+                <div class="flex justify-between text-xs text-gray-500">
+                  <span>20%</span>
+                  <span>60%</span>
+                </div>
+              </div>
+
+              <!-- Gelişmiş Ayarlar -->
+              <div class="border-t border-gray-200 pt-4 space-y-4">
+                <h4 class="font-semibold text-gray-900">Gelişmiş Ayarlar</h4>
+                
+                <div class="space-y-2">
+                  <label class="block text-sm font-medium text-gray-700">
+                    Kenar Boşluğu: {{ qrMargin }}px
+                  </label>
+                  <input
+                    v-model.number="qrMargin"
+                    type="range"
+                    min="0"
+                    max="50"
+                    step="5"
+                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                  />
+                  <div class="flex justify-between text-xs text-gray-500">
+                    <span>0px</span>
+                    <span>50px</span>
+                  </div>
+                </div>
+
+                <div class="space-y-2">
+                  <label class="block text-sm font-medium text-gray-700">Hata Düzeltme Seviyesi</label>
+                  <select
+                    v-model="qrErrorCorrectionLevel"
+                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="L">Düşük (7%)</option>
+                    <option value="M">Orta (15%)</option>
+                    <option value="Q">Yüksek (25%)</option>
+                    <option value="H">Çok Yüksek (30%)</option>
+                  </select>
+                  <p class="text-xs text-gray-500">Yüksek seviye, hasarlı QR kodların okunabilmesini sağlar</p>
+                </div>
+              </div>
+
+              <!-- Butonlar -->
+              <div class="flex gap-3 pt-4">
+                <button
+                  @click="generateQRCode"
+                  :disabled="!qrUrl.trim()"
+                  class="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-semibold transition-colors"
+                >
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-5 h-5">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                  QR Kod Oluştur
+                </button>
+                <button
+                  @click="resetQRSettings"
+                  class="px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-semibold transition-colors"
+                  title="Ayarları sıfırla"
+                >
+                  🔄
+                </button>
+              </div>
+            </div>
+
+            <!-- Sağ Panel - Önizleme ve İndirme -->
+            <div class="space-y-6">
+              <div class="bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-8 flex items-center justify-center min-h-[400px]">
+                <div v-if="qrCodeInstance" class="text-center">
+                  <div ref="qrContainer" class="inline-block"></div>
+                </div>
+                <div v-else class="text-center text-gray-500">
+                  <div class="text-6xl mb-4">📱</div>
+                  <p class="text-lg font-medium mb-2">QR Kod Önizlemesi</p>
+                  <p class="text-sm">Ayarları yapın ve "QR Kod Oluştur" butonuna tıklayın</p>
+                </div>
+              </div>
+
+              <!-- İndirme Butonları -->
+              <div v-if="qrCodeInstance" class="space-y-4">
+                <h4 class="font-semibold text-gray-900">QR Kodu İndir</h4>
+                <div class="grid grid-cols-2 gap-3">
+                  <button
+                    @click="downloadQRCode('png')"
+                    class="flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors"
+                  >
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-5 h-5">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    PNG
+                  </button>
+                  <button
+                    @click="downloadQRCode('svg')"
+                    class="flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium transition-colors"
+                  >
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-5 h-5">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    SVG
+                  </button>
+                  <button
+                    @click="downloadQRCode('jpeg')"
+                    class="flex items-center justify-center gap-2 px-4 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium transition-colors"
+                  >
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-5 h-5">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    JPEG
+                  </button>
+                  <button
+                    @click="downloadQRCode('webp')"
+                    class="flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors"
+                  >
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-5 h-5">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    WEBP
+                  </button>
+                </div>
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <p class="text-sm text-blue-800">
+                    <strong>💡 İpucu:</strong> SVG formatı vektör tabanlıdır ve her boyutta keskin kalır. Baskı işleri için önerilir.
+                  </p>
+                </div>
+              </div>
+
+              <!-- Kullanım Önerileri -->
+              <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2">
+                <h4 class="font-semibold text-gray-900 mb-2">📋 Kullanım Önerileri</h4>
+                <ul class="text-sm text-gray-600 space-y-1 list-disc list-inside">
+                  <li>Logo eklerken yüksek hata düzeltme seviyesi kullanın</li>
+                  <li>Arkaplan ile QR kod rengi arasında yeterli kontrast olmalı</li>
+                  <li>Küçük boyutlarda kullanacaksanız 300x300px yeterlidir</li>
+                  <li>Baskı için minimum 400x400px boyut önerilir</li>
+                  <li>QR kodu test ettikten sonra kullanmaya başlayın</li>
+                </ul>
               </div>
             </div>
           </div>
